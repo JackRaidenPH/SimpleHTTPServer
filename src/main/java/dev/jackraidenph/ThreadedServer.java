@@ -3,6 +3,7 @@ package dev.jackraidenph;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.sql.SQLException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -29,7 +30,21 @@ public class ThreadedServer {
                         "The following client has connected: %s\n", client.getInetAddress().getCanonicalHostName()
                 );
 
-                pool.execute(new ClientHandler(client));
+                ClientHandler handler = null;
+                try {
+                    handler = new ClientHandler(client);
+                    pool.execute(handler);
+                } catch (Exception e) {
+                    try {
+                        if (handler != null) {
+                            handler.stop();
+                        }
+                    } catch (SQLException exception) {
+                        throw new RuntimeException("Eh?");
+                    }
+                    System.err.println(e.getLocalizedMessage());
+                    break;
+                }
             }
         }
     }
