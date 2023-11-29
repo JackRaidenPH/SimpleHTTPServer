@@ -12,7 +12,6 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public class ClientHandler implements Runnable {
@@ -54,8 +53,7 @@ public class ClientHandler implements Runnable {
         String l;
         boolean bodyFlag = false;
         StringBuilder body = new StringBuilder();
-        while (request.ready()) {
-            l = request.readLine();
+        while (request.ready() && (l = request.readLine()) != null) {
 
             if (bodyFlag) {
                 body.append(l).append("\n");
@@ -70,7 +68,6 @@ public class ClientHandler implements Runnable {
             } else {
                 reqMap.put("start", l);
             }
-
         }
 
         reqMap.put("body", body.toString());
@@ -109,7 +106,7 @@ public class ClientHandler implements Runnable {
         Response response = switch (requestMethod) {
             case "GET" -> handleGet(fileRequest, requestPath, requestParams);
             case "PUT" -> handlePut(fileRequest, requestPath, requestParams, requestBody);
-            default -> new Response(405, ContentTypes.NONE, "Method not supported!");
+            default -> new Response(405, ContentTypes.HTML, "Method not supported!");
         };
 
         String rStr = this.constructResponseHeader(response.code(), response.type(), requestVersion) + "\n\n" + response.body();
@@ -180,8 +177,6 @@ public class ClientHandler implements Runnable {
 
                 String query = generateGetQuery(table, params);
 
-                System.out.println(query);
-
                 List<List<String>> t = listFetch(query);
 
                 //String body = constructHTMLPage("template.html", t.get(0), t.subList(1, t.size()));
@@ -207,18 +202,22 @@ public class ClientHandler implements Runnable {
     }
 
     private Response handlePut(boolean isFile, String path, Map<String, String> params, String body) {
-        String extension = path.substring(path.lastIndexOf('.') + 1, path.length() - 1);
 
         if (isFile) {
             if (ClientHandler.checkURL(path)) {
 
                 ClientHandler.writeFileBytes(new File(path), body.getBytes(StandardCharsets.UTF_8));
 
+                String extension = path.substring(path.lastIndexOf('.') + 1, path.length() - 1);
+
                 return new Response(200, ContentTypes.getType(extension), "");
             }
         } else {
             String[] decomposed = path.split("/");
             String table = decomposed[1];
+            if(!params.isEmpty()) {
+                table = table.split("\\?")[0];
+            }
             String req = decomposed[0];
 
             Map<String, String> bodyMap = GSON.fromJson(body, STR_STR_MAP_TYPE);
@@ -237,14 +236,14 @@ public class ClientHandler implements Runnable {
             } catch (SQLException | IllegalArgumentException e) {
                 System.err.println(e.getLocalizedMessage());
                 if (e instanceof IllegalArgumentException) {
-                    return new Response(405, ContentTypes.NONE, "");
+                    return new Response(405, ContentTypes.HTML, "");
                 } else {
-                    return new Response(500, ContentTypes.NONE, "");
+                    return new Response(500, ContentTypes.HTML, "");
                 }
             }
         }
 
-        return new Response(404, ContentTypes.getType(extension), "Resource not found!");
+        return new Response(404, ContentTypes.HTML, "Resource not found!");
     }
 
     private static String generateGetQuery(String table) {
@@ -265,20 +264,20 @@ public class ClientHandler implements Runnable {
         builder.append(' ').append("SET ");
         StringJoiner joiner = new StringJoiner(", ");
         for (Map.Entry<String, String> pair : newValues.entrySet()) {
-            joiner.add(pair.getKey() + "=" + pair.getValue());
+            joiner.add(pair.getKey() + "='" + pair.getValue() + "'");
         }
         builder.append(joiner);
         builder.append(" WHERE 1=1");
-        joiner = new StringJoiner(" AND ");
+        joiner = new StringJoiner(" AND ", " AND ", "");
         for (Map.Entry<String, String> pair : constraints.entrySet()) {
-            joiner.add(pair.getKey() + '=' + pair.getValue());
+            joiner.add(pair.getKey() + "='" + pair.getValue() + "'");
         }
         builder.append(joiner);
         return builder.toString();
     }
 
     public final String generateDeleteQuery(String table, Map<String, String> constraints) {
-        StringJoiner joiner = new StringJoiner(" AND ");
+        StringJoiner joiner = new StringJoiner(" AND ", " AND ", "");
 
         for (Map.Entry<String, String> pair : constraints.entrySet()) {
             joiner.add(pair.getKey() + '=' + pair.getValue());
@@ -289,7 +288,7 @@ public class ClientHandler implements Runnable {
 
     public String generateInsertQuery(String table, Map<String, String> entriesMap) {
 
-        StringJoiner columns = new StringJoiner("(", ")", ","), values = new StringJoiner("(", ")", ",");
+        StringJoiner columns = new StringJoiner(",", "(", ")"), values = new StringJoiner(",", "(", ")");
 
         for (Map.Entry<String, String> entry : entriesMap.entrySet()) {
             columns.add(entry.getKey());
@@ -343,6 +342,8 @@ public class ClientHandler implements Runnable {
         header.append(date);
         final String server = "\nServer: " + this.client.getInetAddress();
         header.append(server);
+        final String CORS = "\nAccess-Control-Allow-Origin: " + "*";
+        header.append(CORS);
         return header.toString();
     }
 
