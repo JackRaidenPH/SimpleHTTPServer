@@ -12,6 +12,7 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 public class ClientHandler implements Runnable {
@@ -19,7 +20,9 @@ public class ClientHandler implements Runnable {
     private final Socket client;
     private final Connection connection;
     private final Gson GSON = new Gson();
-    private final  Type STR_STR_MAP_TYPE = new TypeToken<Map<String, String>>(){}.getType();
+    private final Type STR_STR_MAP_TYPE = new TypeToken<Map<String, String>>() {
+    }.getType();
+
     public ClientHandler(Socket client) throws SQLException {
         this.client = client;
         this.connection = connect("database");
@@ -181,7 +184,21 @@ public class ClientHandler implements Runnable {
 
                 List<List<String>> t = listFetch(query);
 
-                String body = constructHTMLPage("template.html", t.get(0), t.subList(1, t.size()));
+                //String body = constructHTMLPage("template.html", t.get(0), t.subList(1, t.size()));
+
+                List<String> headers = t.get(0);
+                Map<String, List<String>> bMap = new HashMap<>();
+                for (int i = 0; i < headers.size(); i++) {
+                    List<String> col = new ArrayList<>();
+                    for (List<String> row : t.subList(1, t.size())) {
+                        col.add(row.get(i));
+                    }
+                    bMap.put(headers.get(i), col);
+                }
+
+                String body = GSON.toJson(bMap);
+
+                System.out.println(body);
 
                 return new Response(200, ContentTypes.HTML, body);
             }
@@ -195,7 +212,7 @@ public class ClientHandler implements Runnable {
         if (isFile) {
             if (ClientHandler.checkURL(path)) {
 
-               ClientHandler.writeFileBytes(new File(path), body.getBytes(StandardCharsets.UTF_8));
+                ClientHandler.writeFileBytes(new File(path), body.getBytes(StandardCharsets.UTF_8));
 
                 return new Response(200, ContentTypes.getType(extension), "");
             }
@@ -206,7 +223,7 @@ public class ClientHandler implements Runnable {
 
             Map<String, String> bodyMap = GSON.fromJson(body, STR_STR_MAP_TYPE);
 
-            try(Statement st = this.connection.createStatement()) {
+            try (Statement st = this.connection.createStatement()) {
                 String query = switch (req) {
                     case "db_insert" -> generateInsertQuery(table, bodyMap);
                     case "db_update" -> generateUpdateQuery(table, params, bodyMap);
@@ -217,7 +234,7 @@ public class ClientHandler implements Runnable {
                 st.executeUpdate(query);
 
                 return new Response(200, ContentTypes.HTML, "");
-            } catch (SQLException|IllegalArgumentException e) {
+            } catch (SQLException | IllegalArgumentException e) {
                 System.err.println(e.getLocalizedMessage());
                 if (e instanceof IllegalArgumentException) {
                     return new Response(405, ContentTypes.NONE, "");
